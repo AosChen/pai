@@ -60,7 +60,7 @@ try {
   authnConfig.groupConfig = yaml.safeLoad(fs.readFileSync(groupConfigPath, 'utf8'));
 } catch (error) {
   logger.error('Failed to load group config from configmap file.');
-  throw error;
+//  throw error;
 }
 
 // define the schema for authn

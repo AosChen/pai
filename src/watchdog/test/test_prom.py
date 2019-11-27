@@ -15,8 +15,9 @@
 # DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-FROM python:3.7
+import unittest
 
-RUN pip install pyyaml requests prometheus_client twisted
+class TestUnit(unittest.TestCase):
 
-COPY src/watchdog.py /
+    def test_process_event(self):
+        pass

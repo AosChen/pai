@@ -36,7 +36,6 @@ const path = require('path');
 const fs = require('fs');
 const _ = require('lodash');
 const logger = require('@pai/config/logger');
-const restServerConfig = require('@pai/config');
 
 let exitSpecPath;
 if (process.env[env.exitSpecPath]) {
@@ -292,7 +291,7 @@ const convertFrameworkDetail = async (framework) => {
   return detail;
 };
 
-const generateTaskRole = (taskRole, labels, config, userToken) => {
+const generateTaskRole = async (taskRole, labels, config) => {
   const ports = config.taskRoles[taskRole].resourcePerInstance.ports || {};
   for (let port of ['ssh', 'http']) {
     if (!(port in ports)) {
@@ -326,6 +325,8 @@ const generateTaskRole = (taskRole, labels, config, userToken) => {
     retryPolicy.fancyRetryPolicy = true;
     retryPolicy.maxRetryCount = config.taskRoles[taskRole].taskRetryCount || 0;
   }
+
+  const storageConfig = await userModel.getUserStorageConfigs(labels.userName);
 
   const frameworkTaskRole = {
     name: convertName(taskRole),
@@ -366,13 +367,6 @@ const generateTaskRole = (taskRole, labels, config, userToken) => {
                   name: 'GANG_ALLOCATION',
                   value: gangAllocation,
                 },
-                // Pass user token to runtime to give runtime permission to call rest server
-                // Actually we should provide service token for kube-runtime and do not let
-                // runtime personate as a real user.
-                {
-                  name: 'PAI_USER_TOKEN',
-                  value: userToken,
-                },
                 {
                   name: 'PAI_USER_NAME',
                   value: labels.userName,
@@ -382,8 +376,8 @@ const generateTaskRole = (taskRole, labels, config, userToken) => {
                   value: `${labels.userName}~${labels.jobName}`,
                 },
                 {
-                  name: 'PAI_REST_SERVER_URI',
-                  value: restServerConfig.restServerUri,
+                  name: 'SOTRAGE_CONFIGS',
+                  value: JSON.stringify(storageConfig),
                 },
               ],
               volumeMounts: [
@@ -537,7 +531,7 @@ const generateTaskRole = (taskRole, labels, config, userToken) => {
   return frameworkTaskRole;
 };
 
-const generateFrameworkDescription = (frameworkName, virtualCluster, config, rawConfig, userToken) => {
+const generateFrameworkDescription = async (frameworkName, virtualCluster, config, rawConfig) => {
   const [userName, jobName] = frameworkName.split(/~(.+)/);
   const frameworkLabels = {
     jobName,
@@ -572,7 +566,7 @@ const generateFrameworkDescription = (frameworkName, virtualCluster, config, raw
   let totalGpuNumber = 0;
   for (let taskRole of Object.keys(config.taskRoles)) {
     totalGpuNumber += config.taskRoles[taskRole].resourcePerInstance.gpu * config.taskRoles[taskRole].instances;
-    const taskRoleDescription = generateTaskRole(taskRole, frameworkLabels, config, userToken);
+    const taskRoleDescription = await generateTaskRole(taskRole, frameworkLabels, config);
     taskRoleDescription.task.pod.spec.priorityClassName = `${encodeName(frameworkName)}-priority`;
     taskRoleDescription.task.pod.spec.containers[0].env.push(...envlist.concat([
       {
@@ -735,7 +729,7 @@ const get = async (frameworkName) => {
   }
 };
 
-const put = async (frameworkName, config, rawConfig, userToken) => {
+const put = async (frameworkName, config, rawConfig) => {
   const [userName] = frameworkName.split(/~(.+)/);
 
   const virtualCluster = ('defaults' in config && config.defaults.virtualCluster != null) ?
@@ -748,7 +742,7 @@ const put = async (frameworkName, config, rawConfig, userToken) => {
     throw createError('Bad Request', 'BadConfigurationError', 'Job name too long, please try a shorter one.');
   }
 
-  const frameworkDescription = generateFrameworkDescription(frameworkName, virtualCluster, config, rawConfig, userToken);
+  const frameworkDescription = await generateFrameworkDescription(frameworkName, virtualCluster, config, rawConfig);
 
   // calculate pod priority
   // reference: https://github.com/microsoft/pai/issues/3704

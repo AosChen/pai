@@ -16,52 +16,100 @@
 # DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-PYTHON_VERSION=`python -V 2>&1|awk '{print $2}'|awk -F '.' '{print $1}'`
+case $1 in
+  -h|--help)
+    echo "usage: run.sh [-c <container_id>]
+    [-g <gpu index>]
+    [-o <output dir>]
+    [-s <sample period>]
+    [-a <analyze period>]
+    [-d <duration>]
+    [-t <blocked time>]"
+    exit 0
+    ;;
+esac
+# update apt
+apt update
+# update pip
+wget https://bootstrap.pypa.io/get-pip.py
+python get-pip.py
+pip install --upgrade pip
+# install package
+PYTHON_VERSION=`pip -V 2>&1 | awk '{print $6}' | awk -F '.' '{print $1}'`
 if [ $PYTHON_VERSION -eq 3 ];then
     pip install nvidia-ml-py3
 elif [ $PYTHON_VERSION -eq 2 ];then
     pip install nvidia-ml-py
 fi
+pip install enum34
 pip install numpy
-param_num=$#
+pip install matplotlib
 
-CONTAINER_ID=$1
-GPU_INDEX=$2
-CONTAINER_PID=-1
-HOST_DOCKER=Host
-if grep -q $CONTAINER_ID /proc/1/cgroup
-then
-    HOST_DOCKER=Docker
-else
-    CONTAINER_PID=`docker inspect -f {{.State.Pid}} $CONTAINER_ID`
-fi
-
-SAMPLE_PERIOD=0.03
-if [ $param_num -ge 3 ];then
-    SAMPLE_PERIOD=$3
-fi
-
-ANALYZE_PERIOD=20
-if [ $param_num -ge 4 ];then
-    ANALYZE_PERIOD=$4
-fi
-
-OUTPUT_DIR=./Profiling_dir
-if [ $param_num -ge 5 ];then
-    OUTPUT_DIR=$5
-fi
-
+OUTPUT_DIR=Profiling_dir
+CONTAINER_ID="Self"
+GPU_INDEX='0'
+SAMPLE_PERIOD=0.02
+ANALYZE_PERIOD=10
 DURATION=10
-if [ $param_num -ge 6 ];then
-    DURATION=$6
+BLOCKED=0
+HOST_DOCKER=Host
+CONTAINER_PID=-1
+while getopts "c:g:o:s:a:t:w:" OPT;do
+  case $OPT in
+  c)
+    # -c:The container id
+    CONTAINER_ID=$OPTARG
+    if test "$CONTAINER_ID" == "Self" || grep -q $CONTAINER_ID /proc/1/cgroup
+    then
+      HOST_DOCKER=Docker
+    else
+      CONTAINER_PID=`docker inspect -f {{.State.Pid}} $CONTAINER_ID`
+    fi
+    ;;
+  g)
+    # -g:The GPU index
+    GPU_INDEX=$OPTARG
+    ;;
+  o)
+    # -o:The output dir
+    OUTPUT_DIR=./$OPTARG
+    ;;
+  s)
+    # -s:The sample period
+    SAMPLE_PERIOD=$OPTARG
+    ;;
+  a)
+    # -a:The analyze period
+    ANALYZE_PERIOD=$OPTARG
+    ;;
+  t)
+    # -d:How long will the profile run
+    DURATION=$OPTARG
+    ;;
+  w)
+    # -t:How long will the profile waits for
+    BLOCKED=$OPTARG
+    ;;
+  esac
+done
+
+if [ ! -d $OUTPUT_DIR ];then
+  mkdir --parents $OUTPUT_DIR
 fi
 
+#if [ $IS_LOGGED -ge 1 ];then
 echo 'container_id:' $CONTAINER_ID
 echo 'container_pid:' $CONTAINER_PID
-echo 'sample_period:' $SAMPLE_PERIOD
-echo 'analyze_period:' $ANALYZE_PERIOD
+echo 'sample_period:' $SAMPLE_PERIOD's'
+echo 'analyze_period:' $ANALYZE_PERIOD's'
 echo 'platform:' $HOST_DOCKER
-echo 'duration:' $DURATION
+echo 'duration:' $DURATION'minute(s)'
 echo 'output_dir:' $OUTPUT_DIR
 echo 'gpu_index:' $GPU_INDEX
-exec python profiler.py --container_id $CONTAINER_ID --container_pid $CONTAINER_PID --sample_period $SAMPLE_PERIOD --analyze_period $ANALYZE_PERIOD --duration $DURATION --output_dir $OUTPUT_DIR --gpu_index $GPU_INDEX
+echo 'BLOCKED:' $BLOCKED'minute(s)'
+
+if [ $PYTHON_VERSION -eq 3 ];then
+  exec nohup python3 -u `dirname $0`/profiler.py --container_id $CONTAINER_ID --container_pid $CONTAINER_PID --sample_period $SAMPLE_PERIOD --analyze_period $ANALYZE_PERIOD --duration $DURATION --output_dir $OUTPUT_DIR --gpu_index $GPU_INDEX --blocked_time $BLOCKED >$OUTPUT_DIR/log.txt 2>&1 &
+elif [ $PYTHON_VERSION -eq 2 ];then
+  exec nohup python -u `dirname $0`/profiler.py --container_id $CONTAINER_ID --container_pid $CONTAINER_PID --sample_period $SAMPLE_PERIOD --analyze_period $ANALYZE_PERIOD --duration $DURATION --output_dir $OUTPUT_DIR --gpu_index $GPU_INDEX --blocked_time $BLOCKED >$OUTPUT_DIR/log.txt 2>&1 &
+fi

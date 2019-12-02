@@ -406,6 +406,7 @@ def start_sample(container_id, period, analyze_period, duration, output_dir, gpu
     adviser = Adviser()
 
     sample_datas = list()
+    last_time = time.time()
     while time.time() - start_time < duration * 60:
         sample_data = get_sample_data(container_cpu_file, container_mem_file, container_blk_file,
                                       container_net_file, gpu_id, period)
@@ -416,7 +417,8 @@ def start_sample(container_id, period, analyze_period, duration, output_dir, gpu
         sample_datas.append(str_write_realtime)
         realtime_log.writerow(str_write_realtime)
 
-        if len(sample_list) > analyze_period / period:
+        if time.time() - last_time >= analyze_period:
+            last_time = time.time()
             adviser.detect_pattern(sample_list)
             sample_list = list()
             print_process((time.time() - start_time) / (duration * 60))
